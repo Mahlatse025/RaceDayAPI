@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using RaceDayAPI.Models;
+using RaceDayAPI.Data;
 
 namespace RaceDayAPI.Controllers
 {
@@ -9,223 +10,122 @@ namespace RaceDayAPI.Controllers
     public class EventsController : ControllerBase
     {
         private readonly IConfiguration _configuration;
+        private readonly RaceDayContext _context;
 
-        public EventsController(IConfiguration configuration)
+        public EventsController(
+     IConfiguration configuration,
+     RaceDayContext context)
         {
             _configuration = configuration;
+            _context = context;
+        }
+
+        private bool IsOrganiser()
+        {
+            return HttpContext.Session.GetInt32("UserID") != null
+                && HttpContext.Session.GetString("UserRole") == "Organiser";
         }
 
         // GET: api/Events
         [HttpGet]
+
         public IActionResult GetEvents()
         {
-            List<Event> events = new List<Event>();
+            if (HttpContext.Session.GetInt32("UserID") == null)
+                return Unauthorized("Please log in to view events.");
 
-            string connectionString =
-                _configuration.GetConnectionString("RaceDayConnection")!;
-
-            using (SqlConnection connection =
-                   new SqlConnection(connectionString))
-            {
-                string query = @"SELECT EventID, OrganiserID, EventName,
-                                        EventDescription, EventDate,
-                                        EventLocation, EventDistance, EventType
-                                 FROM Events";
-
-                using (SqlCommand command = new SqlCommand(query, connection))
-                {
-                    connection.Open();
-
-                    using (SqlDataReader reader = command.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            events.Add(new Event
-                            {
-                                EventID = reader.GetInt32(0),
-                                OrganiserID = reader.GetInt32(1),
-                                EventName = reader.GetString(2),
-                                EventDescription = reader.IsDBNull(3)
-                                    ? null : reader.GetString(3),
-                                EventDate = reader.GetDateTime(4),
-                                EventLocation = reader.GetString(5),
-                                EventDistance = reader.GetDecimal(6),
-                                EventType = reader.GetString(7)
-                            });
-                        }
-                    }
-                }
-            }
-
+            var events = _context.Events.ToList();
 
             return Ok(events);
         }
 
+
         // GET: api/Events/1
         [HttpGet("{id}")]
+
         public IActionResult GetEventById(int id)
         {
-            Event? eventItem = null;
+            if (HttpContext.Session.GetInt32("UserID") == null)
+                return Unauthorized("Please log in to view events.");
 
-            string connectionString =
-                _configuration.GetConnectionString("RaceDayConnection")!;
-
-            using (SqlConnection connection =
-                   new SqlConnection(connectionString))
-            {
-                string query = @"SELECT EventID, OrganiserID, EventName,
-                                        EventDescription, EventDate,
-                                        EventLocation, EventDistance, EventType
-                                 FROM dbo.Events
-                                 WHERE EventID = @EventID";
-
-                using (SqlCommand command = new SqlCommand(query, connection))
-                {
-                    command.Parameters.AddWithValue("@EventID", id);
-
-                    connection.Open();
-
-                    using (SqlDataReader reader = command.ExecuteReader())
-                    {
-                        if (reader.Read())
-                        {
-                            eventItem = new Event
-                            {
-                                EventID = reader.GetInt32(0),
-                                OrganiserID = reader.GetInt32(1),
-                                EventName = reader.GetString(2),
-                                EventDescription = reader.IsDBNull(3)
-                                    ? null : reader.GetString(3),
-                                EventDate = reader.GetDateTime(4),
-                                EventLocation = reader.GetString(5),
-                                EventDistance = reader.GetDecimal(6),
-                                EventType = reader.GetString(7)
-                            };
-                        }
-                    }
-                }
-            }
+            var eventItem = _context.Events.Find(id);
 
             if (eventItem == null)
             {
                 return NotFound("Event not found.");
             }
 
-
             return Ok(eventItem);
         }
 
+
         // POST: api/Events
         [HttpPost]
+
         public IActionResult CreateEvent(Event newEvent)
         {
-            string connectionString =
-                _configuration.GetConnectionString("RaceDayConnection")!;
+            if (!IsOrganiser())
+                return Unauthorized("Only logged-in Organisers can create events.");
 
-            using (SqlConnection connection =
-                   new SqlConnection(connectionString))
-            {
-                string query = @"INSERT INTO dbo.Events
-                    (OrganiserID, EventName, EventDescription, EventDate,
-                     EventLocation, EventDistance, EventType)
-                    VALUES
-                    (@OrganiserID, @EventName, @EventDescription, @EventDate,
-                     @EventLocation, @EventDistance, @EventType)";
+            // Use the logged-in Organiser's ID
+            int? userId = HttpContext.Session.GetInt32("UserID");
 
-                using (SqlCommand command = new SqlCommand(query, connection))
-                {
-                    command.Parameters.AddWithValue("@OrganiserID", newEvent.OrganiserID);
-                    command.Parameters.AddWithValue("@EventName", newEvent.EventName);
-                    command.Parameters.AddWithValue("@EventDescription",
-                        (object?)newEvent.EventDescription ?? DBNull.Value);
-                    command.Parameters.AddWithValue("@EventDate", newEvent.EventDate);
-                    command.Parameters.AddWithValue("@EventLocation", newEvent.EventLocation);
-                    command.Parameters.AddWithValue("@EventDistance", newEvent.EventDistance);
-                    command.Parameters.AddWithValue("@EventType", newEvent.EventType);
+            if (userId == null)
+                return Unauthorized("Please log in first.");
 
-                    connection.Open();
-                    command.ExecuteNonQuery();
-                }
-            }
+            newEvent.OrganiserID = userId.Value;
+
+            _context.Events.Add(newEvent);
+            _context.SaveChanges();
 
             return Ok("Event created successfully.");
         }
 
         // PUT: api/Events/1
         [HttpPut("{id}")]
+
         public IActionResult UpdateEvent(int id, Event updatedEvent)
         {
-            string connectionString =
-                _configuration.GetConnectionString("RaceDayConnection")!;
+            if (!IsOrganiser())
+                return Unauthorized("Only logged-in Organisers can update events.");
 
-            using (SqlConnection connection =
-                   new SqlConnection(connectionString))
-            {
-                string query = @"UPDATE dbo.Events
-                    SET OrganiserID = @OrganiserID,
-                        EventName = @EventName,
-                        EventDescription = @EventDescription,
-                        EventDate = @EventDate,
-                        EventLocation = @EventLocation,
-                        EventDistance = @EventDistance,
-                        EventType = @EventType
-                    WHERE EventID = @EventID";
+            var existingEvent = _context.Events.Find(id);
 
-                using (SqlCommand command = new SqlCommand(query, connection))
-                {
-                    command.Parameters.AddWithValue("@EventID", id);
-                    command.Parameters.AddWithValue("@OrganiserID", updatedEvent.OrganiserID);
-                    command.Parameters.AddWithValue("@EventName", updatedEvent.EventName);
-                    command.Parameters.AddWithValue("@EventDescription",
-                        (object?)updatedEvent.EventDescription ?? DBNull.Value);
-                    command.Parameters.AddWithValue("@EventDate", updatedEvent.EventDate);
-                    command.Parameters.AddWithValue("@EventLocation", updatedEvent.EventLocation);
-                    command.Parameters.AddWithValue("@EventDistance", updatedEvent.EventDistance);
-                    command.Parameters.AddWithValue("@EventType", updatedEvent.EventType);
+            if (existingEvent == null)
+                return NotFound("Event not found.");
 
-                    connection.Open();
+            existingEvent.EventName = updatedEvent.EventName;
+            existingEvent.EventDescription = updatedEvent.EventDescription;
+            existingEvent.EventDate = updatedEvent.EventDate;
+            existingEvent.EventLocation = updatedEvent.EventLocation;
+            existingEvent.EventDistance = updatedEvent.EventDistance;
+            existingEvent.EventType = updatedEvent.EventType;
 
-                    int rowsAffected = command.ExecuteNonQuery();
-
-                    if (rowsAffected == 0)
-                    {
-                        return NotFound("Event not found.");
-                    }
-                }
-            }
+            _context.SaveChanges();
 
             return Ok("Event updated successfully.");
         }
 
+
         // DELETE: api/Events/1
         [HttpDelete("{id}")]
+
         public IActionResult DeleteEvent(int id)
         {
-            string connectionString =
-                _configuration.GetConnectionString("RaceDayConnection")!;
+            if (!IsOrganiser())
+                return Unauthorized("Only logged-in Organisers can delete events.");
 
-            using (SqlConnection connection =
-                   new SqlConnection(connectionString))
-            {
-                string query = "DELETE FROM dbo.Events WHERE EventID = @EventID";
+            var eventItem = _context.Events.Find(id);
 
-                using (SqlCommand command = new SqlCommand(query, connection))
-                {
-                    command.Parameters.AddWithValue("@EventID", id);
+            if (eventItem == null)
+                return NotFound("Event not found.");
 
-                    connection.Open();
-
-                    int rowsAffected = command.ExecuteNonQuery();
-
-                    if (rowsAffected == 0)
-                    {
-                        return NotFound("Event not found.");
-                    }
-                }
-            }
+            _context.Events.Remove(eventItem);
+            _context.SaveChanges();
 
             return Ok("Event deleted successfully.");
         }
+
 
 
     }

@@ -1,4 +1,6 @@
 
+using Microsoft.EntityFrameworkCore;
+
 namespace RaceDayAPI
 {
     public class Program
@@ -7,9 +9,20 @@ namespace RaceDayAPI
         {
             var builder = WebApplication.CreateBuilder(args);
 
+            builder.Services.AddDbContext<RaceDayAPI.Data.RaceDayContext>(options =>
+    options.UseSqlServer(
+        builder.Configuration.GetConnectionString("RaceDayConnection")));
             // Add services to the container.
 
             builder.Services.AddControllers();
+            builder.Services.AddDistributedMemoryCache();
+
+            builder.Services.AddSession(options =>
+            {
+                options.IdleTimeout = TimeSpan.FromMinutes(30);
+                options.Cookie.HttpOnly = true;
+                options.Cookie.IsEssential = true;
+            });
             // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
             builder.Services.AddEndpointsApiExplorer();
             builder.Services.AddSwaggerGen();
@@ -24,6 +37,7 @@ namespace RaceDayAPI
             }
 
             app.UseHttpsRedirection();
+            app.UseSession();
 
             app.UseAuthorization();
 
